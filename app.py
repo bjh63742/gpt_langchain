@@ -34,14 +34,6 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message_box.markdown(self.message)
 
 
-llm = ChatOpenAI(
-    temperature=0.1,
-    streaming=True,
-    callbacks=[
-        ChatCallbackHandler(),
-    ],
-)
-
 
 @st.cache_data(show_spinner="Embedding file...")
 def embed_file(file):
@@ -93,11 +85,7 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-if "memory" in st.session_state:
-    memory = st.session_state["memory"]
-else:
-    st.session_state["memory"] = ConversationBufferMemory(return_messages=True , llm=llm, max_token_limit =20)
-    memory = st.session_state["memory"]
+
 
 # 입력 저장 함수
 def save_human_memroy(user_input):
@@ -114,45 +102,78 @@ def load_memory(_):
     return memory.load_memory_variables({})["history"]
 
 
-st.title("chat bot")
+openai_api_key = None
 
-st.markdown(
-    """
-Welcome!
-            
-Use this chatbot to ask questions to an AI about your files!
+if "openai_api_key" in st.session_state:
+    openai_api_key = st.session_state["openai_api_key"]
 
-Upload your files on the sidebar.
-"""
-)
 
-with st.sidebar:
-    file = st.file_uploader(
-        "Upload a .txt .pdf or .docx file",
-        type=["pdf", "txt", "docx"],
-    )
-
-if file:
-    retriever = embed_file(file)
-    send_message("I'm ready! Ask away!", "ai", save=False)
-    paint_history()
-    message = st.chat_input("Ask anything about your file...")
-    if message:
-        send_message(message, "human")
-        chain = (
-            {
-                "context": retriever | RunnableLambda(format_docs),
-                "question": RunnablePassthrough(),
-                 "history": load_memory,
-            }
-            | prompt
-            | llm
+print(openai_api_key)
+if openai_api_key is not None:
+    llm = ChatOpenAI(
+            temperature=0.1,
+            streaming=True,
+            callbacks=[
+                ChatCallbackHandler(),
+            ],
+            openai_api_key = openai_api_key
         )
-        save_human_memroy(message)
-        with st.chat_message("ai"):
-            chain.invoke(message)
-            
+    if "memory" in st.session_state:
+        memory = st.session_state["memory"]
+    else:
+        st.session_state["memory"] = ConversationBufferMemory(return_messages=True , llm=llm, max_token_limit =20)
+        memory = st.session_state["memory"]
+    st.title("chat bot")
 
+    st.markdown(
+        """
+        Welcome!
+                    
+        Use this chatbot to ask questions to an AI about your files!
+
+        Upload your files on the sidebar.
+        """
+    )
+    with st.sidebar:
+        file = st.file_uploader(
+            "Upload a .txt .pdf or .docx file",
+            type=["pdf", "txt", "docx"],
+        )
+
+    if file:
+        retriever = embed_file(file)
+        send_message("I'm ready! Ask away!", "ai", save=False)
+        paint_history()
+        message = st.chat_input("Ask anything about your file...")
+        if message:
+            send_message(message, "human")
+            chain = (
+                {
+                    "context": retriever | RunnableLambda(format_docs),
+                    "question": RunnablePassthrough(),
+                    "history": load_memory,
+                }
+                | prompt
+                | llm
+            )
+            save_human_memroy(message)
+            with st.chat_message("ai"):
+                chain.invoke(message)
+                
+
+
+    else:
+        st.session_state["messages"] = []
 
 else:
-    st.session_state["messages"] = []
+    st.error(
+        """
+        You need to set your OpenAI API key in the `openai_api_key` variable at the top of the script.
+        """
+    )
+
+    with st.sidebar:
+        openai_api_key = st.text_input(
+            "Please input OpenAI API"
+        )
+        st.session_state["openai_api_key"] = openai_api_key
